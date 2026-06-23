@@ -7,6 +7,7 @@ version = "0.2.1"
 edition = "2021"
 license = "Apache-2.0"
 description = "Canonical types for Kin semantic VCS"
+repository = "https://github.com/firelock-ai/kin-model"
 
 [dependencies]
 kin-blobs = { version = "0.1.0", registry = "kin", features = ["schema"] }
