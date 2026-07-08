@@ -71,12 +71,11 @@ pub struct SemanticFingerprint {
     /// pure-no-op statements (e.g. docstrings) normalized away, so a
     /// behavior-preserving body edit leaves it unchanged while any real change
     /// alters it. The zero hash (the serde default) means "not computed" and is
-    /// never treated as a match. Omitted from serialization when zero so the
-    /// wire format is unchanged for entities that predate the field.
-    #[serde(
-        default = "zero_equivalence_hash",
-        skip_serializing_if = "equivalence_hash_is_zero"
-    )]
+    /// never treated as a match. Always serialized — the field is positional in
+    /// the graph's binary snapshot format, so it must not be conditionally
+    /// skipped — while `#[serde(default)]` lets self-describing payloads that
+    /// predate the field deserialize to the zero sentinel.
+    #[serde(default = "zero_equivalence_hash")]
     pub equivalence_hash: Hash256,
     /// Confidence in fingerprint stability (0.0 - 1.0).
     pub stability_score: f32,
@@ -86,11 +85,6 @@ pub struct SemanticFingerprint {
 /// the sentinel for "equivalence class not computed".
 fn zero_equivalence_hash() -> Hash256 {
     Hash256::from_bytes([0; 32])
-}
-
-/// Whether an equivalence hash is the zero sentinel (not computed).
-fn equivalence_hash_is_zero(hash: &Hash256) -> bool {
-    *hash == zero_equivalence_hash()
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
