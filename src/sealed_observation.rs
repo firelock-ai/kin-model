@@ -95,11 +95,6 @@ impl SealedObservationBinding {
                 "sealed observation has body bytes but no sealed bodies".to_string(),
             ));
         }
-        if self.sealed_body_bytes < self.opaque_bodies {
-            return Err(ModelError::InvalidOperation(
-                "sealed observation has fewer body bytes than opaque bodies".to_string(),
-            ));
-        }
         Ok(())
     }
 }
@@ -165,12 +160,10 @@ mod tests {
             malformed.validate().unwrap_err().to_string(),
             "invalid operation: sealed observation has body bytes but no sealed bodies"
         );
+    }
 
-        malformed = binding();
-        malformed.sealed_body_bytes = malformed.opaque_bodies - 1;
-        assert_eq!(
-            malformed.validate().unwrap_err().to_string(),
-            "invalid operation: sealed observation has fewer body bytes than opaque bodies"
-        );
+    #[test]
+    fn zero_length_opaque_bodies_are_valid() {
+        SealedObservationBinding::new(Hash256::from_bytes([0x42; 32]), 1, 1, 1, 0, 1, 0).unwrap();
     }
 }
