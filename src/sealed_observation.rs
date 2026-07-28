@@ -73,9 +73,16 @@ impl SealedObservationBinding {
                 "sealed observation must cover at least one admitted tree".to_string(),
             ));
         }
-        if self.sealed_bodies > self.observed_entries {
+        if self.declared_exclusions > self.observed_entries {
             return Err(ModelError::InvalidOperation(
-                "sealed observation has more distinct bodies than observed entries".to_string(),
+                "sealed observation has more declared exclusions than observed entries".to_string(),
+            ));
+        }
+        let included_entries = self.observed_entries - self.declared_exclusions;
+        if self.sealed_bodies > included_entries {
+            return Err(ModelError::InvalidOperation(
+                "sealed observation has more sealed bodies than non-excluded observed entries"
+                    .to_string(),
             ));
         }
         if self.opaque_bodies > self.sealed_bodies {
@@ -83,9 +90,14 @@ impl SealedObservationBinding {
                 "sealed observation has more opaque bodies than sealed bodies".to_string(),
             ));
         }
-        if self.declared_exclusions > self.observed_entries {
+        if self.sealed_bodies == 0 && self.sealed_body_bytes != 0 {
             return Err(ModelError::InvalidOperation(
-                "sealed observation has more declared exclusions than observed entries".to_string(),
+                "sealed observation has body bytes but no sealed bodies".to_string(),
+            ));
+        }
+        if self.sealed_body_bytes < self.opaque_bodies {
+            return Err(ModelError::InvalidOperation(
+                "sealed observation has fewer body bytes than opaque bodies".to_string(),
             ));
         }
         Ok(())
@@ -113,18 +125,52 @@ mod tests {
     fn impossible_coverage_relationships_fail_closed() {
         let mut malformed = binding();
         malformed.schema_version = 2;
-        assert!(malformed.validate().is_err());
+        assert_eq!(
+            malformed.validate().unwrap_err().to_string(),
+            "invalid operation: unsupported sealed-observation binding version 2"
+        );
 
         malformed = binding();
         malformed.observed_trees = 0;
-        assert!(malformed.validate().is_err());
-
-        malformed = binding();
-        malformed.opaque_bodies = malformed.sealed_bodies + 1;
-        assert!(malformed.validate().is_err());
+        assert_eq!(
+            malformed.validate().unwrap_err().to_string(),
+            "invalid operation: sealed observation must cover at least one admitted tree"
+        );
 
         malformed = binding();
         malformed.declared_exclusions = malformed.observed_entries + 1;
-        assert!(malformed.validate().is_err());
+        assert_eq!(
+            malformed.validate().unwrap_err().to_string(),
+            "invalid operation: sealed observation has more declared exclusions than observed entries"
+        );
+
+        malformed = binding();
+        malformed.declared_exclusions = malformed.observed_entries - malformed.sealed_bodies + 1;
+        assert_eq!(
+            malformed.validate().unwrap_err().to_string(),
+            "invalid operation: sealed observation has more sealed bodies than non-excluded observed entries"
+        );
+
+        malformed = binding();
+        malformed.opaque_bodies = malformed.sealed_bodies + 1;
+        assert_eq!(
+            malformed.validate().unwrap_err().to_string(),
+            "invalid operation: sealed observation has more opaque bodies than sealed bodies"
+        );
+
+        malformed = binding();
+        malformed.sealed_bodies = 0;
+        malformed.opaque_bodies = 0;
+        assert_eq!(
+            malformed.validate().unwrap_err().to_string(),
+            "invalid operation: sealed observation has body bytes but no sealed bodies"
+        );
+
+        malformed = binding();
+        malformed.sealed_body_bytes = malformed.opaque_bodies - 1;
+        assert_eq!(
+            malformed.validate().unwrap_err().to_string(),
+            "invalid operation: sealed observation has fewer body bytes than opaque bodies"
+        );
     }
 }
