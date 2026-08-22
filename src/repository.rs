@@ -3840,6 +3840,69 @@ mod tests {
         );
     }
 
+    /// Which of the two whole-transaction materializations inside the hash is
+    /// the one worth removing.
+    ///
+    /// `canonical_json_bytes` builds a `serde_json::Value` tree of the whole
+    /// transaction and then encodes that whole tree into a `Vec<u8>`, and both
+    /// are live when the encode returns. A fix can remove either. This prices
+    /// them separately so the choice is made by measurement rather than by
+    /// which one is easier to write.
+    ///
+    /// Reported, never asserted as a ceiling, for the reason the test above
+    /// gives: a ceiling here pins the encoder and drifts with any serde change.
+    /// The assertions are shape only, and they are the ones that would break if
+    /// this test stopped measuring what it claims to.
+    #[test]
+    fn the_hash_holds_two_whole_transaction_materializations_and_prices_both() {
+        let transaction = large_transaction(200);
+        transaction.canonical_hash().unwrap();
+
+        let view_and_tree = measure_peak_live_bytes(|| {
+            let tree = serde_json::to_value(CanonicalTransaction::new(&transaction)).unwrap();
+            std::hint::black_box(&tree);
+        });
+        let tree_and_encoding = measure_peak_live_bytes(|| {
+            let encoded =
+                crate::identity::canonical_json_bytes(&CanonicalTransaction::new(&transaction))
+                    .unwrap();
+            std::hint::black_box(&encoded);
+        });
+        let encoded_len =
+            crate::identity::canonical_json_bytes(&CanonicalTransaction::new(&transaction))
+                .unwrap()
+                .len();
+        let whole_hash = measure_peak_live_bytes(|| {
+            transaction.canonical_hash().unwrap();
+        });
+
+        println!(
+            "tree {view_and_tree} tree+encoding {tree_and_encoding} \
+             encoded_len {encoded_len} whole_hash {whole_hash}"
+        );
+
+        assert!(
+            view_and_tree > 0 && tree_and_encoding > 0 && encoded_len > 0 && whole_hash > 0,
+            "the probe measured nothing, so it cannot fail: tree {view_and_tree}, \
+             tree+encoding {tree_and_encoding}, encoded_len {encoded_len}, \
+             whole_hash {whole_hash}"
+        );
+        assert!(
+            tree_and_encoding > view_and_tree,
+            "encoding on top of the tree must cost more than the tree alone, \
+             or the two materializations are not both live ({tree_and_encoding} \
+             against {view_and_tree})"
+        );
+        // The tree is the larger of the two. If this ever inverts, the fix that
+        // is worth writing has changed, and it should be re-chosen rather than
+        // carried forward from this measurement.
+        assert!(
+            view_and_tree > encoded_len,
+            "the Value tree {view_and_tree} is no longer larger than the encoding \
+             it produces ({encoded_len}); re-price the fix before removing either"
+        );
+    }
+
     /// Transaction identity must not depend on the order a caller built its
     /// collections in.
     ///
