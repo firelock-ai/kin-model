@@ -4246,7 +4246,10 @@ mod tests {
         ) -> std::result::Result<Option<TreeEntry>, Self::Error> {
             unimplemented!("PagingStore answers query_entities only")
         }
-        fn delete_file_layout(&self, _file_id: &FilePathId) -> std::result::Result<(), Self::Error> {
+        fn delete_file_layout(
+            &self,
+            _file_id: &FilePathId,
+        ) -> std::result::Result<(), Self::Error> {
             unimplemented!("PagingStore answers query_entities only")
         }
         fn apply_transaction_delta(
@@ -4452,7 +4455,10 @@ mod tests {
             .unwrap();
         let (seen, rounds) = walk_pages(&store, &filter, 12);
 
-        assert_eq!(page.total_matching, 30, "the total counts matches, not rows");
+        assert_eq!(
+            page.total_matching, 30,
+            "the total counts matches, not rows"
+        );
         assert_eq!(page.entities.len(), 12);
         assert_eq!(seen, expected);
         assert_eq!(rounds, 3);
