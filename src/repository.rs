@@ -2157,14 +2157,59 @@ mod tests {
         transaction
     }
 
-    /// One operation record carrying every optional field this crate can put in
-    /// one.
+    /// The premise the borrowing path rests on, asserted rather than argued.
     ///
-    /// `RepositoryOperationRecord::identity_hash` hashes `identity_payload()`
-    /// through the shared canonical encoder, and no transaction fixture reaches
-    /// it, so the byte differential needs a record built directly. The Git
-    /// authority delta is set here for the same reason it is set in the preimage
-    /// corpus: it is the payload the encoder rewrite was about (FIR-2551).
+    /// `canonicalized` may borrow instead of copying only because a record that
+    /// has passed `validate` already has its semantic delta in the order
+    /// `sort_canonical` would impose. That holds only if the two use the SAME
+    /// key: `sort_canonical` sorts by `target_id`, and `validate` refuses
+    /// adjacent pairs that are not strictly increasing by `target_id`.
+    ///
+    /// If this ever fires, `canonicalized` must go back to copying, or become a
+    /// view type that sorts the delta itself. Everything else here assumes it.
+    #[test]
+    fn validate_enforces_the_order_sort_canonical_imposes() {
+        let first = EntityDelta::Added {
+            new: semantic_entity(1, "first"),
+        };
+        let second = EntityDelta::Added {
+            new: semantic_entity(2, "second"),
+        };
+        assert_ne!(
+            first.target_id(),
+            second.target_id(),
+            "the control: the two deltas must have distinct targets, or order is unobservable"
+        );
+        let (low, high) = if first.target_id() < second.target_id() {
+            (first, second)
+        } else {
+            (second, first)
+        };
+
+        let descending = WorkspaceSemanticDelta {
+            version: WORKSPACE_SEMANTIC_DELTA_SCHEMA_VERSION,
+            entity_deltas: vec![high.clone(), low.clone()],
+            relation_deltas: Vec::new(),
+            external_reference_deltas: Vec::new(),
+        };
+        assert!(
+            descending.validate().is_err(),
+            "validate must refuse a descending delta, or it enforces no order at all"
+        );
+
+        let mut sorted = descending.clone();
+        sorted.sort_canonical();
+        assert_eq!(
+            sorted.entity_deltas,
+            vec![low, high],
+            "sort_canonical must order by the key validate enforces"
+        );
+        sorted.validate().expect(
+            "a sorted delta must satisfy validate; if it does not, sort_canonical and validate \
+             use different keys and canonicalized must not borrow",
+        );
+    }
+
     /// The borrowing identity must be the copying identity, byte for byte.
     ///
     /// This is a PERSISTED authority digest. A byte that differs is not a
@@ -2187,7 +2232,21 @@ mod tests {
         let mut no_refs = sample_operation_record();
         no_refs.ref_mutations.clear();
 
-        let cases: [(&str, RepositoryOperationRecord); 5] = [
+        // A case that IS canonical, so the borrow path is exercised. The
+        // fixture is deliberately non-canonical: `canonicalizable_transaction`
+        // says "every vector below is out of canonical order on purpose", so
+        // without this every case took the copy path, and the control below
+        // said so on the first CI run.
+        let mut already_canonical = sample_operation_record();
+        already_canonical
+            .ref_mutations
+            .sort_by(|left, right| left.name.cmp(&right.name));
+        if let Some(workspace) = &mut already_canonical.workspace_mutation {
+            workspace.tree_deltas.sort_by_key(TreeDelta::artifact_id);
+        }
+
+        let cases: [(&str, RepositoryOperationRecord); 6] = [
+            ("already canonical", already_canonical),
             ("as built", sample_operation_record()),
             ("ref mutations reversed", reversed_refs),
             ("tree deltas reversed", reversed_tree),
@@ -2226,6 +2285,14 @@ mod tests {
         );
     }
 
+    /// One operation record carrying every optional field this crate can put in
+    /// one.
+    ///
+    /// `RepositoryOperationRecord::identity_hash` hashes `identity_payload()`
+    /// through the shared canonical encoder, and no transaction fixture reaches
+    /// it, so the byte differential needs a record built directly. The Git
+    /// authority delta is set here for the same reason it is set in the preimage
+    /// corpus: it is the payload the encoder rewrite was about (FIR-2551).
     fn sample_operation_record() -> RepositoryOperationRecord {
         let transaction = canonicalizable_transaction();
         let mut roots_after = roots();
